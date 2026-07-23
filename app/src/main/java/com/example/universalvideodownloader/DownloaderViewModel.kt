@@ -142,7 +142,6 @@ class DownloaderViewModel : ViewModel() {
 
             val html = connection.inputStream.bufferedReader().use { it.readText() }
 
-            // Extract direct video source tag src
             val sourceRegex = Pattern.compile("""<source[^>]+src=["']([^"']+)["']""", Pattern.CASE_INSENSITIVE)
             val sourceMatch = sourceRegex.matcher(html)
             if (sourceMatch.find()) {
@@ -153,7 +152,6 @@ class DownloaderViewModel : ViewModel() {
                 }
             }
 
-            // Extract raw MP4 or M3U8 URLs
             val mp4Regex = Regex("""https?:[\\/A-Za-z0-9_.\-~%?&=]+(?:\.mp4|\.m3u8|bytestream)[\\/A-Za-z0-9_.\-~%?&=]*""")
             val match = mp4Regex.find(html)
             if (match != null) {
@@ -221,7 +219,7 @@ class DownloaderViewModel : ViewModel() {
                 } else {
                     finalUrl = "https://www.instagram.com/p/$shortcode/embed/captioned/"
                 }
-            } else {
+            } else if (!lowerUrl.contains("youtube.com") && !lowerUrl.contains("youtu.be")) {
                 var extractedMedia = getDirectMediaStream(cleanUrl)
                 if (extractedMedia == null) {
                     extractedMedia = WebViewExtractor.extractMediaUrl(context, cleanUrl)
@@ -231,8 +229,14 @@ class DownloaderViewModel : ViewModel() {
                 }
             }
 
-            val titleText = if (lowerUrl.contains("tiktok")) "TikTok Video" else if (lowerUrl.contains("instagram")) "Instagram Video" else if (lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "Facebook Video" else "Video Download"
-            val format = if (lowerUrl.contains("tiktok") || lowerUrl.contains("instagram") || lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "b/best" else "b/best/mp4"
+            val titleText = if (lowerUrl.contains("tiktok")) "TikTok Video" else if (lowerUrl.contains("instagram")) "Instagram Video" else if (lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "Facebook Video" else if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) "YouTube Video" else "Video Download"
+            
+            // Prioritize video+audio merged H.264 MP4 for YouTube Shorts & Videos
+            val format = if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) {
+                "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best"
+            } else {
+                "b/best"
+            }
             startDownload(context, finalUrl, titleText, null, format)
         }
     }
