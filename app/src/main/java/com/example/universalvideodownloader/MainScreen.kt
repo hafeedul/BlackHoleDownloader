@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -61,7 +62,11 @@ fun MainScreen(viewModel: DownloaderViewModel = viewModel()) {
     val downloads by viewModel.downloads.collectAsState()
     val remoteMessage by FirebaseManager.updateMessage.collectAsState()
     val remoteUrl by FirebaseManager.updateUrl.collectAsState()
+    val forceUpdate by FirebaseManager.forceUpdate.collectAsState()
+    val latestVersionCode by FirebaseManager.latestVersionCode.collectAsState()
+
     var url by remember { mutableStateOf("") }
+    val currentAppVersionCode = 1
 
     val formatOptions = listOf(
         "Max Quality" to "bestvideo+bestaudio/best",
@@ -104,6 +109,49 @@ fun MainScreen(viewModel: DownloaderViewModel = viewModel()) {
         return null
     }
 
+    // Force Update Un-dismissable Dialog
+    if (forceUpdate && latestVersionCode > currentAppVersionCode) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Update Required", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(
+                    text = if (remoteMessage.isNotBlank()) remoteMessage else "A new required update is available with faster download speeds and critical bug fixes. Please update to continue using Black Hole Downloader.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            val targetUrl = if (remoteUrl.isNotBlank()) remoteUrl else "https://github.com/hafeedul/BlackHoleDownloader/raw/main/BlackHoleDownloader_v1.0.apk"
+                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl))
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("UPDATE NOW", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = null,
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize()
@@ -118,7 +166,8 @@ fun MainScreen(viewModel: DownloaderViewModel = viewModel()) {
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             
-            if (remoteMessage.isNotEmpty()) {
+            // Optional Notice Banner
+            if (remoteMessage.isNotEmpty() && !forceUpdate) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(12.dp),

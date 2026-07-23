@@ -20,20 +20,29 @@ object FirebaseManager {
     private val _updateUrl = MutableStateFlow("")
     val updateUrl: StateFlow<String> = _updateUrl.asStateFlow()
 
+    private val _forceUpdate = MutableStateFlow(false)
+    val forceUpdate: StateFlow<Boolean> = _forceUpdate.asStateFlow()
+
+    private val _latestVersionCode = MutableStateFlow(1)
+    val latestVersionCode: StateFlow<Int> = _latestVersionCode.asStateFlow()
+
     fun init(context: Context) {
         try {
             analytics = FirebaseAnalytics.getInstance(context)
             logEvent("app_open", null)
 
             remoteConfig = FirebaseRemoteConfig.getInstance()
+            // Set 0 seconds fetch interval for instant remote update checks
             val configSettings = FirebaseRemoteConfigSettings.Builder()
-                .setMinimumFetchIntervalInSeconds(3600)
+                .setMinimumFetchIntervalInSeconds(0)
                 .build()
             remoteConfig?.setConfigSettingsAsync(configSettings)
 
             val defaults = mapOf(
-                "update_message" to "",
-                "update_url" to ""
+                "update_message" to "A new update is available with performance improvements!",
+                "update_url" to "https://github.com/hafeedul/BlackHoleDownloader/raw/main/BlackHoleDownloader_v1.0.apk",
+                "force_update" to false,
+                "latest_version_code" to 1
             )
             remoteConfig?.setDefaultsAsync(defaults)
             fetchRemoteConfig()
@@ -68,8 +77,15 @@ object FirebaseManager {
                 if (task.isSuccessful) {
                     val msg = remoteConfig?.getString("update_message") ?: ""
                     val url = remoteConfig?.getString("update_url") ?: ""
+                    val force = remoteConfig?.getBoolean("force_update") ?: false
+                    val version = remoteConfig?.getLong("latest_version_code")?.toInt() ?: 1
+
                     _updateMessage.value = msg
                     _updateUrl.value = url
+                    _forceUpdate.value = force
+                    _latestVersionCode.value = version
+
+                    Log.d("FirebaseManager", "RemoteConfig updated -> force: $force, version: $version, url: $url")
                 }
             }
         } catch (e: Exception) {
