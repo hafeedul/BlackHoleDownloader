@@ -73,9 +73,9 @@ dependencies {
   implementation("io.coil-kt:coil-compose:2.6.0")
 
   // YouTube / Video Downloader engine
-  implementation("com.github.yausername.youtubedl-android:ffmpeg:0.17.3")
-  implementation("com.github.yausername.youtubedl-android:aria2c:0.17.3")
-  implementation("com.github.yausername.youtubedl-android:library:0.17.3")
+  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
+  implementation("io.github.junkfood02.youtubedl-android:aria2c:0.17.3")
+  implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
 
   // Google Mobile Ads (AdMob)
   implementation("com.google.android.gms:play-services-ads:23.0.0")
