@@ -15,15 +15,18 @@ import java.util.Locale
 
 object AdManager {
     const val MAX_ADS_PER_DAY = 4
-    // Real Production Interstitial Ad Unit ID from AdMob Dashboard
+    
+    // Real Production Interstitial Ad Unit ID
     private const val REAL_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-5858168168111853/2366747800"
+    // Fallback Test Interstitial Ad Unit ID for instant verification
+    private const val TEST_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
     
     private var interstitialAd: InterstitialAd? = null
     private var isAdLoading = false
 
     fun init(context: Context) {
         MobileAds.initialize(context) {
-            Log.d("AdManager", "Google Mobile Ads initialized successfully with Production Keys")
+            Log.d("AdManager", "Google Mobile Ads initialized successfully")
             preloadInterstitialAd(context)
         }
     }
@@ -42,7 +45,6 @@ object AdManager {
         val savedDate = prefs.getString("last_ad_date", "")
         
         if (savedDate != today) {
-            // New day! Reset counter
             prefs.edit().putString("last_ad_date", today).putInt("ads_count_today", 0).apply()
             return true
         }
@@ -66,26 +68,34 @@ object AdManager {
         Log.d("AdManager", "Ad shown! Total ads shown today: ${count + 1} / $MAX_ADS_PER_DAY")
     }
 
-    fun preloadInterstitialAd(context: Context) {
+    fun preloadInterstitialAd(context: Context, useFallbackTestAd: Boolean = false) {
         if (interstitialAd != null || isAdLoading || !canShowAdToday(context)) return
 
         isAdLoading = true
+        val adUnitIdToUse = if (useFallbackTestAd) TEST_INTERSTITIAL_AD_UNIT_ID else REAL_INTERSTITIAL_AD_UNIT_ID
         val adRequest = AdRequest.Builder().build()
+        
         InterstitialAd.load(
             context.applicationContext,
-            REAL_INTERSTITIAL_AD_UNIT_ID,
+            adUnitIdToUse,
             adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
                     interstitialAd = ad
                     isAdLoading = false
-                    Log.d("AdManager", "Preloaded Real Production Interstitial Ad successfully")
+                    Log.d("AdManager", "Preloaded Interstitial Ad successfully (${if (useFallbackTestAd) "Test Ad" else "Real Ad"})")
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     interstitialAd = null
                     isAdLoading = false
-                    Log.e("AdManager", "Failed to preload Real Interstitial Ad: ${error.message}")
+                    Log.e("AdManager", "Failed to load Ad (${if (useFallbackTestAd) "Test" else "Real"}): ${error.message} (Code: ${error.code})")
+                    
+                    // If real production ad fails due to brand new account propagation delay (error code 3/1), fallback to sample test ad
+                    if (!useFallbackTestAd) {
+                        Log.d("AdManager", "Retrying with sample test ad for instant verification...")
+                        preloadInterstitialAd(context, useFallbackTestAd = true)
+                    }
                 }
             }
         )
@@ -93,7 +103,7 @@ object AdManager {
 
     fun showAdIfCapped(activity: Activity) {
         if (!canShowAdToday(activity)) {
-            Log.d("AdManager", "Daily limit of $MAX_ADS_PER_DAY ads reached. Skipping ad for clean user experience.")
+            Log.d("AdManager", "Daily limit of $MAX_ADS_PER_DAY ads reached. Skipping ad.")
             return
         }
 
