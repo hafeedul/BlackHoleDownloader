@@ -48,6 +48,12 @@ object WebViewExtractor {
                 finishWith(null)
             }, 14000)
 
+            continuation.invokeOnCancellation {
+                Handler(Looper.getMainLooper()).post {
+                    finishWith(null)
+                }
+            }
+
             webView.webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                     val urlStr = request?.url?.toString() ?: ""

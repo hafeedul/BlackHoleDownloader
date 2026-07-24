@@ -9,3 +9,11 @@
 .externalNativeBuild
 .cxx
 local.properties
+repo/
+download_repo.ps1
+
+*.apk
+*.aar
+releases/
+repo/
+BlackHoleDownloader_v1.0.apk

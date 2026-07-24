@@ -48,17 +48,24 @@ class DownloaderViewModel : ViewModel() {
                     request.addOption("--no-check-certificate")
                     request.addOption("--geo-bypass")
                     if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) {
-                        request.addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                        request.addOption("--extractor-args", "youtube:player_client=ios,mweb")
+                        request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
+                    } else if (lowerUrl.contains("facebook.com") || lowerUrl.contains("fb.")) {
+                        request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
+                        request.addOption("--referer", "https://www.facebook.com/")
+                    } else if (lowerUrl.contains("instagram.com")) {
+                        request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
+                        request.addOption("--referer", "https://www.instagram.com/")
                     } else {
-                        request.addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                        request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
                         request.addOption("--referer", cleanUrl)
                     }
                     YoutubeDL.getInstance().getInfo(request)
                 }
                 DownloadManager.updateFetchState(AppState.InfoReady(info))
             } catch (e: Exception) {
-                Log.e("DownloaderViewModel", "Fetch info failed for $cleanUrl, running WebViewExtractor fallback", e)
-                startDirectDownload(context, cleanUrl)
+                Log.e("DownloaderViewModel", "Fetch info failed for $cleanUrl", e)
+                DownloadManager.updateFetchState(AppState.Error(e.localizedMessage ?: "Failed to fetch video info"))
             }
         }
     }
@@ -142,6 +149,7 @@ class DownloaderViewModel : ViewModel() {
 
             val html = connection.inputStream.bufferedReader().use { it.readText() }
 
+            // Extract direct video source tag src
             val sourceRegex = Pattern.compile("""<source[^>]+src=["']([^"']+)["']""", Pattern.CASE_INSENSITIVE)
             val sourceMatch = sourceRegex.matcher(html)
             if (sourceMatch.find()) {
@@ -152,6 +160,7 @@ class DownloaderViewModel : ViewModel() {
                 }
             }
 
+            // Extract raw MP4 or M3U8 URLs
             val mp4Regex = Regex("""https?:[\\/A-Za-z0-9_.\-~%?&=]+(?:\.mp4|\.m3u8|bytestream)[\\/A-Za-z0-9_.\-~%?&=]*""")
             val match = mp4Regex.find(html)
             if (match != null) {
@@ -213,13 +222,13 @@ class DownloaderViewModel : ViewModel() {
 
             val shortcode = extractInstagramShortcode(cleanUrl)
             if (shortcode != null) {
-                val directMp4 = getDirectInstagramMp4(cleanUrl)
+                val directMp4 = getDirectInstagramMp4(shortcode)
                 if (directMp4 != null) {
                     finalUrl = directMp4
                 } else {
                     finalUrl = "https://www.instagram.com/p/$shortcode/embed/captioned/"
                 }
-            } else if (!lowerUrl.contains("youtube.com") && !lowerUrl.contains("youtu.be")) {
+            } else {
                 var extractedMedia = getDirectMediaStream(cleanUrl)
                 if (extractedMedia == null) {
                     extractedMedia = WebViewExtractor.extractMediaUrl(context, cleanUrl)
@@ -229,14 +238,8 @@ class DownloaderViewModel : ViewModel() {
                 }
             }
 
-            val titleText = if (lowerUrl.contains("tiktok")) "TikTok Video" else if (lowerUrl.contains("instagram")) "Instagram Video" else if (lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "Facebook Video" else if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) "YouTube Video" else "Video Download"
-            
-            // Prioritize video+audio merged H.264 MP4 for YouTube Shorts & Videos
-            val format = if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) {
-                "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best"
-            } else {
-                "b/best"
-            }
+            val titleText = if (lowerUrl.contains("tiktok")) "TikTok Video" else if (lowerUrl.contains("instagram")) "Instagram Video" else if (lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "Facebook Video" else "Video Download"
+            val format = if (lowerUrl.contains("tiktok") || lowerUrl.contains("instagram") || lowerUrl.contains("facebook") || lowerUrl.contains("fb.")) "b/best" else "b/best/mp4"
             startDownload(context, finalUrl, titleText, null, format)
         }
     }

@@ -6,12 +6,15 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.media.MediaScannerConnection
+import android.content.ContentValues
+import android.net.Uri
+import android.provider.MediaStore
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.content.Context
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.CoroutineScope
@@ -116,7 +119,8 @@ class DownloadService : Service() {
 
         val job = serviceScope.launch {
             try {
-                val tmpDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "UniversalVideoDownloader_tmp")
+                val baseTmpDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "UniversalVideoDownloader_tmp")
+                val tmpDir = File(baseTmpDir, downloadId)
                 if (!tmpDir.exists()) tmpDir.mkdirs()
 
                 val lowerUrl = item.url.lowercase()
@@ -131,12 +135,18 @@ class DownloadService : Service() {
                 request.addOption("--no-playlist")
                 request.addOption("--no-check-certificate")
                 request.addOption("--geo-bypass")
+                request.addOption("--continue")
+                request.addOption("--no-part")
                 // Safe %(id)s filename pattern prevents backslash/slash path corruption in titles
                 request.addOption("-o", tmpDir.absolutePath + "/%(id)s.%(ext)s")
                 request.addOption("--merge-output-format", "mp4")
 
                 if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be")) {
-                    request.addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    request.addOption("--extractor-args", "youtube:player_client=ios,mweb")
+                    request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
+                } else if (lowerUrl.contains("facebook.com") || lowerUrl.contains("fb.")) {
+                    request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
+                    request.addOption("--referer", "https://www.facebook.com/")
                 } else if (lowerUrl.contains("instagram.com")) {
                     request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
                     request.addOption("--referer", "https://www.instagram.com/")
@@ -144,7 +154,7 @@ class DownloadService : Service() {
                     request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
                     request.addOption("--referer", "https://www.tiktok.com/")
                 } else {
-                    request.addOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    request.addOption("--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
                     request.addOption("--referer", item.url)
                 }
 
@@ -163,12 +173,12 @@ class DownloadService : Service() {
 
                 withContext(Dispatchers.IO) {
                     YoutubeDL.getInstance().execute(request, processId) { progress, etaInSeconds, line ->
-                        val displayProgress = progress.coerceAtLeast(0f)
-
-                        val sizes = parseSizes(line, displayProgress)
+                        var safeProgress = progress.coerceAtLeast(0f)
+                        val sizes = parseSizes(line, safeProgress)
                         if (sizes != null) {
-                            parsedDownloadedSize = sizes.first
-                            parsedTotalSize = sizes.second
+                            safeProgress = sizes.first
+                            parsedDownloadedSize = sizes.second.first
+                            parsedTotalSize = sizes.second.second
                         }
 
                         val speedMatch = speedRegex.find(line)
@@ -189,7 +199,7 @@ class DownloadService : Service() {
                             DownloadManager.updateDownloadItem(downloadId) {
                                 it.copy(
                                     status = DownloadStatus.DOWNLOADING,
-                                    progress = displayProgress,
+                                    progress = safeProgress,
                                     eta = etaInSeconds,
                                     speed = currentStatus,
                                     downloadedSize = parsedDownloadedSize.ifEmpty { it.downloadedSize },
@@ -201,9 +211,9 @@ class DownloadService : Service() {
                         if (System.currentTimeMillis() - lastNotificationUpdate > 1000) {
                             lastNotificationUpdate = System.currentTimeMillis()
                             val notifText = if (parsedTotalSize.isNotEmpty()) {
-                                "Downloading: ${"%.0f".format(displayProgress)}% ($parsedDownloadedSize / $parsedTotalSize)"
+                                "Downloading: ${"%.0f".format(safeProgress)}% ($parsedDownloadedSize / $parsedTotalSize)"
                             } else {
-                                "Downloading: ${"%.0f".format(displayProgress)}%"
+                                "Downloading: ${"%.0f".format(safeProgress)}%"
                             }
                             updateNotification(notifText)
                         }
@@ -215,32 +225,22 @@ class DownloadService : Service() {
                 var finalPath = downloadedFile?.absolutePath
 
                 if (downloadedFile != null) {
-                    val publicDownloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    val publicOutDir = File(publicDownloadsDir, "UniversalVideoDownloader")
-                    if (!publicOutDir.exists()) publicOutDir.mkdirs()
-
                     val sanitizedTitle = item.title.replace(Regex("""[^\w\s.-]"""), "_").trim()
                     val outputFileName = if (sanitizedTitle.isNotBlank()) "${sanitizedTitle}.${downloadedFile.extension}" else downloadedFile.name
-                    val destFile = File(publicOutDir, outputFileName)
-                    val success = downloadedFile.renameTo(destFile)
-                    if (!success) {
-                        downloadedFile.copyTo(destFile, overwrite = true)
-                        downloadedFile.delete()
+                    
+                    val uriPath = saveToPublicDownloads(this@DownloadService, downloadedFile, outputFileName, "video/mp4")
+                    if (uriPath != null) {
+                        finalPath = uriPath
                     }
-                    finalPath = destFile.absolutePath
-                    val fileSizeFormatted = "%.1f MB".format(destFile.length() / (1024f * 1024f))
+                    
+                    val fileSizeFormatted = "%.1f MB".format((if (downloadedFile.exists()) downloadedFile.length() else 0L) / (1024f * 1024f))
                     if (parsedTotalSize.isEmpty()) parsedTotalSize = fileSizeFormatted
+                }
 
-                    try {
-                        MediaScannerConnection.scanFile(
-                            applicationContext,
-                            arrayOf(destFile.absolutePath),
-                            arrayOf("video/mp4"),
-                            null
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                try {
+                    tmpDir.deleteRecursively()
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
 
                 FirebaseManager.logDownloadCompleted(item.title, item.format)
@@ -291,10 +291,23 @@ class DownloadService : Service() {
             connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            connection.setRequestProperty("Referer", "https://www.tiktok.com/")
+            val hostUrl = url.toString()
+            if (hostUrl.contains("tiktokcdn")) {
+                connection.setRequestProperty("Referer", "https://www.tiktok.com/")
+            } else if (hostUrl.contains("cdninstagram")) {
+                connection.setRequestProperty("Referer", "https://www.instagram.com/")
+            } else if (hostUrl.contains("fbcdn")) {
+                connection.setRequestProperty("Referer", "https://www.facebook.com/")
+            }
+            connection.instanceFollowRedirects = true
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
             connection.connect()
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                throw Exception("HTTP Error: $responseCode ${connection.responseMessage}")
+            }
 
             val fileLength = connection.contentLengthLong
             val input = connection.inputStream
@@ -335,18 +348,14 @@ class DownloadService : Service() {
             output.close()
             input.close()
 
-            val publicDownloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val publicOutDir = File(publicDownloadsDir, "UniversalVideoDownloader")
-            if (!publicOutDir.exists()) publicOutDir.mkdirs()
-
             val sanitizedTitle = item.title.replace(Regex("""[^\w\s.-]"""), "_").trim()
             val outputFileName = if (sanitizedTitle.isNotBlank()) "${sanitizedTitle}.mp4" else "${targetFile.name}"
-            val destFile = File(publicOutDir, outputFileName)
-            targetFile.renameTo(destFile)
+            
+            val targetLength = targetFile.length()
+            val uriPath = saveToPublicDownloads(this@DownloadService, targetFile, outputFileName, "video/mp4")
+            val finalPath = uriPath ?: targetFile.absolutePath
 
-            MediaScannerConnection.scanFile(applicationContext, arrayOf(destFile.absolutePath), arrayOf("video/mp4"), null)
-
-            val fileSizeFormatted = "%.1f MB".format(destFile.length() / (1024f * 1024f))
+            val fileSizeFormatted = "%.1f MB".format(targetLength / (1024f * 1024f))
             DownloadManager.updateDownloadItem(downloadId) {
                 it.copy(
                     status = DownloadStatus.COMPLETED,
@@ -354,8 +363,13 @@ class DownloadService : Service() {
                     speed = "Completed",
                     downloadedSize = fileSizeFormatted,
                     totalSize = fileSizeFormatted,
-                    filePath = destFile.absolutePath
+                    filePath = finalPath
                 )
+            }
+            try {
+                tmpDir.deleteRecursively()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         } catch (e: Exception) {
             Log.e("DownloadService", "Direct download error", e)
@@ -367,19 +381,24 @@ class DownloadService : Service() {
         }
     }
 
-    private fun parseSizes(line: String, progress: Float): Pair<String, String>? {
-        val match = sizeRegex.find(line)
-        if (match != null) {
-            val totalStr = match.groupValues[2].trim()
-            val totalMb = parseToMb(totalStr)
-            if (totalMb > 0) {
-                val downloadedMb = (progress / 100f) * totalMb
-                val downloadedStr = "%.1f MB".format(downloadedMb)
-                val totalFormatted = "%.1f MB".format(totalMb)
-                return Pair(downloadedStr, totalFormatted)
+    private fun parseSizes(line: String, progress: Float): Pair<Float, Pair<String, String>>? {
+        return try {
+            val match = sizeRegex.find(line)
+            if (match != null && match.groupValues.size >= 3) {
+                val pctParsed = match.groupValues[1].toFloatOrNull() ?: progress
+                val totalStr = match.groupValues[2].trim()
+                val totalMb = parseToMb(totalStr)
+                if (totalMb > 0) {
+                    val downloadedMb = (pctParsed / 100f) * totalMb
+                    val downloadedStr = "%.1f MB".format(downloadedMb)
+                    val totalFormatted = "%.1f MB".format(totalMb)
+                    return Pair(pctParsed, Pair(downloadedStr, totalFormatted))
+                }
             }
+            null
+        } catch (e: Exception) {
+            null
         }
-        return null
     }
 
     private fun parseToMb(sizeStr: String): Float {
@@ -488,5 +507,54 @@ class DownloadService : Service() {
         val notification = buildNotification(text)
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun saveToPublicDownloads(context: Context, tempFile: File, displayName: String, mimeType: String): String? {
+        if (!tempFile.exists()) return null
+        
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/UniversalVideoDownloader")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { output ->
+                        tempFile.inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                    
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    
+                    tempFile.delete()
+                    return uri.toString()
+                }
+            } else {
+                val publicDownloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val publicOutDir = File(publicDownloadsDir, "UniversalVideoDownloader")
+                if (!publicOutDir.exists()) publicOutDir.mkdirs()
+                
+                val destFile = File(publicOutDir, displayName)
+                if (tempFile.renameTo(destFile)) {
+                    return destFile.absolutePath
+                } else {
+                    tempFile.copyTo(destFile, overwrite = true)
+                    tempFile.delete()
+                    return destFile.absolutePath
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("DownloadService", "Failed to save file to public downloads", e)
+        }
+        return null
     }
 }

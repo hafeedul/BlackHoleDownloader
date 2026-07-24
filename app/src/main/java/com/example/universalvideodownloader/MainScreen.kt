@@ -66,7 +66,11 @@ fun MainScreen(viewModel: DownloaderViewModel = viewModel()) {
     val latestVersionCode by FirebaseManager.latestVersionCode.collectAsState()
 
     var url by remember { mutableStateOf("") }
-    val currentAppVersionCode = 1
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val currentAppVersionCode = try {
+        val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(pInfo).toInt()
+    } catch (e: Exception) { 1 }
 
     val formatOptions = listOf(
         "Max Quality" to "bestvideo+bestaudio/best",
@@ -90,7 +94,6 @@ fun MainScreen(viewModel: DownloaderViewModel = viewModel()) {
         }
     }
 
-    val context = LocalContext.current
     val activity = context as? Activity
     val activeDownloads = downloads.filter { it.status != DownloadStatus.COMPLETED }
     val completedDownloads = downloads.filter { it.status == DownloadStatus.COMPLETED }
@@ -916,14 +919,20 @@ private fun openFile(context: android.content.Context, filePath: String?) {
         Toast.makeText(context, "File path not found", Toast.LENGTH_SHORT).show()
         return
     }
-    val file = File(filePath)
-    if (!file.exists()) {
-        Toast.makeText(context, "Downloaded video file does not exist", Toast.LENGTH_SHORT).show()
-        return
-    }
 
     try {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val uri: android.net.Uri
+        if (filePath.startsWith("content://")) {
+            uri = android.net.Uri.parse(filePath)
+        } else {
+            val file = File(filePath)
+            if (!file.exists()) {
+                Toast.makeText(context, "Downloaded video file does not exist", Toast.LENGTH_SHORT).show()
+                return
+            }
+            uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        }
+        
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "video/*")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

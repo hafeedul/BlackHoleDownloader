@@ -17,7 +17,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
         }
     }
 
@@ -61,36 +61,50 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
 
-  // Jetpack Compose UI
+  // Arch Components
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+  // Compose
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation("androidx.compose.material:material-icons-extended:1.6.8")
+  implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
-  // Navigation & ViewModel
-  implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-  // Image Loading
-  implementation("io.coil-kt:coil-compose:2.6.0")
-
-  // YouTube / Video Downloader engine
-  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.3")
-  implementation("io.github.junkfood02.youtubedl-android:aria2c:0.17.3")
-  implementation("io.github.junkfood02.youtubedl-android:library:0.17.3")
+  // Firebase
+  implementation(platform("com.google.firebase:firebase-bom:32.8.0"))
+  implementation("com.google.firebase:firebase-analytics-ktx")
+  implementation("com.google.firebase:firebase-config-ktx")
 
   // Google Mobile Ads (AdMob)
   implementation("com.google.android.gms:play-services-ads:23.0.0")
 
-  // Firebase BOM, Analytics & Remote Config
-  implementation(platform("com.google.firebase:firebase-bom:33.0.0"))
-  implementation("com.google.firebase:firebase-analytics-ktx")
-  implementation("com.google.firebase:firebase-config-ktx")
-
-  // Testing
-  testImplementation(libs.junit)
-  androidTestImplementation(libs.androidx.test.ext.junit)
-  androidTestImplementation(libs.androidx.test.espresso.core)
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+  // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
+  // Instrumented tests
+  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+  // Local tests: jUnit, coroutines, Android runner
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+
+  // Instrumented tests: jUnit rules and runners
+  androidTestImplementation(libs.androidx.test.core)
+  androidTestImplementation(libs.androidx.test.ext.junit)
+  androidTestImplementation(libs.androidx.test.runner)
+  androidTestImplementation(libs.androidx.test.espresso.core)
+
+  // Navigation
+  implementation(libs.androidx.navigation3.ui)
+  implementation(libs.androidx.navigation3.runtime)
+  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+  
+  // Youtube DL
+  implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
+  implementation("io.github.junkfood02.youtubedl-android:aria2c:0.18.1")
+  
+  // Coil for image loading
+  implementation("io.coil-kt:coil-compose:2.5.0")
 }
